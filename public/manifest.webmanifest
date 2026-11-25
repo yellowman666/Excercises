@@ -1,0 +1,10 @@
+{
+  "name": "Exercises",
+  "short_name": "Exercises",
+  "description": "Workout tracking and strength progression",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111214",
+  "theme_color": "#d92332",
+  "icons": []
+}
