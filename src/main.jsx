@@ -36,7 +36,20 @@ function App(){
     const {error:e3}=await supabase.from('exercise_sets').insert(payload); if(e3){setNotice(e3.message);return;} setNotice('Workout saved to your cloud account.'); setExerciseName(''); await loadWorkouts(); setTab('history');
   }
   const filtered=useMemo(()=>library.filter(x=>(x.name.toLowerCase().includes(query.toLowerCase())||x.muscle.toLowerCase().includes(query.toLowerCase()))&&(muscle==='All'||x.muscle===muscle)&&(equipment==='All'||x.equipment===equipment)),[query,muscle,equipment]);
-  const historyFor=workouts.flatMap(w=>(w.workout_exercises||[]).filter(x=>x.exercise_name===selected.name).flatMap(ex=>(ex.exercise_sets||[]).map(s=>({date:w.workout_date,weight:Number(s.weight||0),reps:Number(s.reps||0),label:new Date(w.workout_date+'T00:00:00').toLocaleDateString()}))))).sort((a,b)=>a.date.localeCompare(b.date));
+  const historyFor = workouts
+  .flatMap((workout) =>
+    (workout.workout_exercises || [])
+      .filter((exercise) => exercise.exercise_name === selected.name)
+      .flatMap((exercise) =>
+        (exercise.exercise_sets || []).map((set) => ({
+          date: workout.workout_date,
+          weight: Number(set.weight || 0),
+          reps: Number(set.reps || 0),
+          label: new Date(workout.workout_date + 'T00:00:00').toLocaleDateString(),
+        }))
+      )
+  )
+  .sort((a, b) => a.date.localeCompare(b.date));
   const baseWorkout=workouts.find(w=>w.title===title);
   function loadBase(){if(!baseWorkout)return; const ex=baseWorkout.workout_exercises?.[0]; if(!ex)return; setExerciseName(ex.exercise_name);setSets((ex.exercise_sets||[]).sort((a,b)=>a.set_number-b.set_number).map(s=>({reps:String(s.reps??''),weight:String(s.weight??'')})));setNotice('Loaded a previous session as your starting point.');}
   return <div className="app">
