@@ -25,7 +25,7 @@ const [recoveryMode,setRecoveryMode]=useState(false);
   const [selected,setSelected]=useState(library[0]), [graphMetric,setGraphMetric]=useState('weight');
   const [date,setDate]=useState(new Date().toISOString().slice(0,10)), [title,setTitle]=useState('PUSH'), [exerciseName,setExerciseName]=useState(''), [sets,setSets]=useState([{reps:'8',weight:'',},{reps:'8',weight:''},{reps:'8',weight:''}]);
   const [notice,setNotice]=useState('');
-  useEffect(()=>{ if(!supabase)return; supabase.auth.getSession().then(({data})=>setSession(data.session)); const {data:{subscription}}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s)); return ()=>subscription.unsubscribe(); },[]);
+useEffect(()=>{ if(!supabase)return; supabase.auth.getSession().then(({data})=>setSession(data.session)); const {data:{subscription}}=supabase.auth.onAuthStateChange((event,s)=>{setSession(s);if(event==='PASSWORD_RECOVERY')setRecoveryMode(true);}); return ()=>subscription.unsubscribe(); },[]);
   useEffect(()=>{ if(session) loadWorkouts(); },[session]);
   async function loadWorkouts(){ const {data,error}=await supabase.from('workouts').select('*, workout_exercises(*, exercise_sets(*))').order('workout_date',{ascending:false}); if(error)setNotice(error.message); else setWorkouts(data||[]); }
   async function signIn(e){e.preventDefault(); if(!supabase){setNotice('Cloud is not configured yet. Follow SETUP.md to connect Supabase.');return;} const {error}=await supabase.auth.signInWithPassword({email,password}); if(error)setNotice(error.message);}
