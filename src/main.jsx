@@ -97,6 +97,7 @@ function App(){
   const [title,setTitle]=useState('PUSH');
   const [exerciseItems,setExerciseItems]=useState([blankExercise()]);
   const [notice,setNotice]=useState('');
+  const [deletingId,setDeletingId]=useState(null);
 
   useEffect(()=>{
     if(!supabase)return;
@@ -195,6 +196,71 @@ function App(){
     setPassword('');
     setNotice('Password updated successfully. You can now sign in again.');
     await supabase.auth.signOut();
+  }
+
+  // Delete a complete workout and all its associated exercises and sets.
+  async function deleteWorkout(workout){
+    if(!supabase||!session){
+      setNotice('You must be signed in to delete workouts.');
+      return;
+    }
+
+    const confirmed=window.confirm(
+      `Are you sure you want to permanently delete this workout?\n\n${workout.title} - ${workout.workout_date}\n\nAll exercises and sets in this workout will also be deleted. This cannot be undone.`
+    );
+
+    if(!confirmed)return;
+
+    setDeletingId(workout.id);
+    setNotice('Deleting workout...');
+
+    try{
+      const exerciseIds=(workout.workout_exercises||[])
+        .map(ex=>ex.id);
+
+      // Delete the sets belonging to this workout's exercises first.
+      if(exerciseIds.length){
+        const {error:setsError}=await supabase
+          .from('exercise_sets')
+          .delete()
+          .in('workout_exercise_id',exerciseIds);
+
+        if(setsError){
+          setNotice('Could not delete workout sets: '+setsError.message);
+          return;
+        }
+
+        // Then delete the exercises.
+        const {error:exercisesError}=await supabase
+          .from('workout_exercises')
+          .delete()
+          .eq('workout_id',workout.id);
+
+        if(exercisesError){
+          setNotice('Could not delete workout exercises: '+exercisesError.message);
+          return;
+        }
+      }
+
+      // Finally delete the workout itself.
+      const {error:workoutError}=await supabase
+        .from('workouts')
+        .delete()
+        .eq('id',workout.id)
+        .eq('user_id',session.user.id);
+
+      if(workoutError){
+        setNotice('Could not delete workout: '+workoutError.message);
+        return;
+      }
+
+      setWorkouts(current=>current.filter(w=>w.id!==workout.id));
+      setNotice(`${workout.title} workout from ${workout.workout_date} deleted successfully.`);
+    }catch(error){
+      setNotice('An unexpected error occurred: '+error.message);
+    }finally{
+      setDeletingId(null);
+    }
   }
 
   function updateExerciseName(index,value){
@@ -332,7 +398,6 @@ function App(){
     (equipment==='All'||x.equipment===equipment)
   ),[query,muscle,equipment]);
 
-  // Only include sets belonging to the currently selected exercise.
   const historyFor=workouts
     .flatMap(workout=>
       (workout.workout_exercises||[])
@@ -348,8 +413,6 @@ function App(){
     )
     .sort((a,b)=>a.date.localeCompare(b.date));
 
-  // Find matching workouts, prioritising the latest date.
-  // If dates are equal, prefer the workout containing more exercises.
   const baseWorkout=workouts
     .filter(w=>w.title===title)
     .sort((a,b)=>{
@@ -763,8 +826,28 @@ function App(){
           {workouts.map(w=>
             <article className="history-card" key={w.id}>
               <div className="section-head">
-                <div><b>{w.title}</b><small>{w.workout_date}</small></div>
-                <CalendarDays/>
+                <div>
+                  <b>{w.title}</b>
+                  <small>{w.workout_date}</small>
+                </div>
+
+                <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                  <CalendarDays/>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Delete this workout"
+                    aria-label={`Delete ${w.title} workout from ${w.workout_date}`}
+                    disabled={deletingId!==null}
+                    onClick={()=>deleteWorkout(w)}
+                    style={{color:'#e12d3c'}}
+                  >
+                    {deletingId===w.id
+                      ? '...'
+                      : <Trash2 size={18}/>
+                    }
+                  </button>
+                </div>
               </div>
 
               {(w.workout_exercises||[])
