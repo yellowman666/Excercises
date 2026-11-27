@@ -332,6 +332,7 @@ function App(){
     (equipment==='All'||x.equipment===equipment)
   ),[query,muscle,equipment]);
 
+  // Only include sets belonging to the currently selected exercise.
   const historyFor=workouts
     .flatMap(workout=>
       (workout.workout_exercises||[])
@@ -347,7 +348,17 @@ function App(){
     )
     .sort((a,b)=>a.date.localeCompare(b.date));
 
-  const baseWorkout=workouts.find(w=>w.title===title);
+  // Find matching workouts, prioritising the latest date.
+  // If dates are equal, prefer the workout containing more exercises.
+  const baseWorkout=workouts
+    .filter(w=>w.title===title)
+    .sort((a,b)=>{
+      const dateCompare=b.workout_date.localeCompare(a.workout_date);
+      if(dateCompare!==0)return dateCompare;
+
+      return (b.workout_exercises?.length||0)-
+             (a.workout_exercises?.length||0);
+    })[0];
 
   function loadBase(){
     if(!baseWorkout)return;
@@ -364,7 +375,10 @@ function App(){
           }))
       }));
 
-    if(!exercises.length)return;
+    if(!exercises.length){
+      setNotice('The selected previous workout has no exercises.');
+      return;
+    }
 
     setExerciseItems(exercises);
     setNotice('Previous workout loaded. You can change it before saving.');
@@ -578,7 +592,9 @@ function App(){
             <div className="base-row">
               <div>
                 <b>Use a past workout as your base</b>
-                <small>Loads the latest saved session with the same workout name.</small>
+                <small>
+                  Loads the latest matching workout. If dates match, the one with more exercises is preferred.
+                </small>
               </div>
               <button type="button" onClick={loadBase} disabled={!baseWorkout}>
                 <Copy size={15}/> Load base
@@ -784,6 +800,29 @@ function App(){
         <section className="card">
           <div className="section-head">
             <div>
+              <h3>Exercise progression</h3>
+              <p>Select an exercise to view its individual history.</p>
+            </div>
+            <Dumbbell/>
+          </div>
+
+          <label>
+            Select exercise
+            <select
+              value={selected.name}
+              onChange={e=>{
+                const exercise=library.find(x=>x.name===e.target.value);
+                if(exercise)setSelected(exercise);
+              }}
+            >
+              {library.map(x=>
+                <option key={x.name} value={x.name}>{x.name}</option>
+              )}
+            </select>
+          </label>
+
+          <div className="section-head" style={{marginTop:'20px'}}>
+            <div>
               <h3>{selected.name}</h3>
               <p>{selected.muscle} · {selected.equipment}</p>
             </div>
@@ -833,19 +872,25 @@ function App(){
                   </AreaChart>
                 </ResponsiveContainer>
               : <div className="empty">
-                  No records for this exercise yet. Log it in a workout and its weight and reps will appear here.
+                  No records for {selected.name} yet. Log this exercise in a workout and its progress will appear here.
                 </div>
             }
           </div>
 
           <div className="section-head">
-            <div><h3>Recorded sets</h3><p>Historical performance, oldest to newest</p></div>
+            <div>
+              <h3>{selected.name} – Recorded Sets</h3>
+              <p>Only sets recorded for this exercise are displayed.</p>
+            </div>
           </div>
 
           {historyFor.map((x,i)=>
             <div className="history-row" key={i}>
               <CalendarDays/>
-              <div><b>{x.label}</b><small>{x.weight} kg · {x.reps} reps</small></div>
+              <div>
+                <b>{x.label}</b>
+                <small>{x.weight} kg · {x.reps} reps</small>
+              </div>
             </div>
           )}
         </section>
