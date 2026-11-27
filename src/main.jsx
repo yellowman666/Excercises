@@ -29,6 +29,23 @@ useEffect(()=>{ if(!supabase)return; supabase.auth.getSession().then(({data})=>s
   useEffect(()=>{ if(session) loadWorkouts(); },[session]);
   async function loadWorkouts(){ const {data,error}=await supabase.from('workouts').select('*, workout_exercises(*, exercise_sets(*))').order('workout_date',{ascending:false}); if(error)setNotice(error.message); else setWorkouts(data||[]); }
   async function signIn(e){e.preventDefault(); if(!supabase){setNotice('Cloud is not configured yet. Follow SETUP.md to connect Supabase.');return;} const {error}=await supabase.auth.signInWithPassword({email,password}); if(error)setNotice(error.message);}
+async function updatePassword(e){
+  e.preventDefault();
+  const {error}=await supabase.auth.updateUser({password});
+  if(error){setNotice(error.message);return;}
+  setRecoveryMode(false);
+  setPassword('');
+  setNotice('Password updated successfully. You can now sign in with your new password.');
+  await supabase.auth.signOut();
+}
+  async function forgotPassword(){
+  if(!supabase){setNotice('Cloud is not configured.');return;}
+  if(!email.trim()){setNotice('Enter your email address first.');return;}
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{
+    redirectTo:window.location.origin
+  });
+  setNotice(error?error.message:'Password reset email sent. Check your inbox.');
+}
   async function signUp(){if(!supabase){setNotice('Cloud is not configured yet. Follow SETUP.md to connect Supabase.');return;} const {error}=await supabase.auth.signUp({email,password}); setNotice(error?error.message:'Check your email to confirm your account.');}
   async function saveWorkout(e){e.preventDefault(); if(!supabase||!session){setNotice('Sign in and connect cloud saving before saving workouts.');return;} if(!exerciseName.trim()){setNotice('Add an exercise first.');return;}
     const {data:w,error}=await supabase.from('workouts').insert({user_id:session.user.id,workout_date:date||new Date().toISOString().slice(0,10),title}).select().single(); if(error){setNotice(error.message);return;}
@@ -60,7 +77,41 @@ useEffect(()=>{ if(!supabase)return; supabase.auth.getSession().then(({data})=>s
     </aside>
     <main><header><div><span className="eyebrow">YOUR TRAINING SPACE</span><h1>{({home:'Overview',workout:'Start workout',library:'Exercise library',history:'Workout history',progress:'Exercise progression'})[tab]}</h1></div><div className="header-right"><span className="cloud"><span/> {session?'Cloud connected':'Cloud setup required'}</span></div></header>
       {notice&&<div className="notice" onClick={()=>setNotice('')}>{notice} <b>×</b></div>}
-      {!session&&<section className="auth card"><div><h3>Connect your private cloud account</h3><p>Create an account or sign in after completing the Supabase setup. No historical workout data has been imported.</p></div><form onSubmit={signIn}><input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required/><input type="password" placeholder="Password (6+ characters)" value={password} onChange={e=>setPassword(e.target.value)} required/><div className="row"><button className="primary" type="submit"><LogIn size={16}/> Sign in</button><button type="button" onClick={signUp}>Create account</button></div></form></section>}
+      {recoveryMode ? (
+  <section className="auth card">
+    <div>
+      <h3>Set a new password</h3>
+      <p>Enter your new password below.</p>
+    </div>
+    <form onSubmit={updatePassword}>
+      <input
+        type="password"
+        placeholder="New password (6+ characters)"
+        value={password}
+        onChange={e=>setPassword(e.target.value)}
+        minLength="6"
+        required
+      />
+      <button className="primary" type="submit">Save new password</button>
+    </form>
+  </section>
+) : !session && (
+  <section className="auth card">
+    <div>
+      <h3>Connect your private cloud account</h3>
+      <p>Create an account or sign in after completing the Supabase setup. No historical workout data has been imported.</p>
+    </div>
+    <form onSubmit={signIn}>
+      <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required/>
+      <input type="password" placeholder="Password (6+ characters)" value={password} onChange={e=>setPassword(e.target.value)} required/>
+      <div className="row">
+        <button className="primary" type="submit"><LogIn size={16}/> Sign in</button>
+        <button type="button" onClick={signUp}>Create account</button>
+      </div>
+      <button type="button" onClick={forgotPassword}>Forgot password?</button>
+    </form>
+  </section>
+)}
       {tab==='home'&&<><section className="hero"><div><span className="eyebrow">CONSISTENCY BUILDS STRENGTH</span><h2>Your next session<br/>starts here.</h2><p>Log your sets, learn from your history and track every rep.</p><button className="primary" onClick={()=>setTab('workout')}><Plus size={17}/> Start a workout</button></div><div className="hero-mark"><Footprints size={112}/></div></section><div className="stats"><div className="card stat"><small>WORKOUTS LOGGED</small><strong>{workouts.length}</strong><span>Since you started</span></div><div className="card stat"><small>EXERCISES IN LIBRARY</small><strong>{library.length}</strong><span>Machines & variations</span></div><div className="card stat"><small>DATA STATUS</small><strong>{session?'Synced':'Empty'}</strong><span>{session?'Private cloud account':'No personal data imported'}</span></div></div><section className="card"><div className="section-head"><div><h3>Recent workouts</h3><p>Your latest saved sessions</p></div><button onClick={()=>setTab('history')}>View history →</button></div>{workouts.slice(0,4).map(w=><div className="history-row" key={w.id}><CalendarDays/><div><b>{w.title}</b><small>{w.workout_date}</small></div><span>{w.workout_exercises?.length||0} exercises</span></div>)}{!workouts.length&&<div className="empty">No workouts yet. Your history will appear here after your first saved session.</div>}</section></>}
       {tab==='workout'&&<section className="card form-card"><div className="section-head"><div><h3>New workout</h3><p>Choose a date, routine and exercise. Date defaults to today.</p></div><Dumbbell/></div><form onSubmit={saveWorkout}><div className="form-grid"><label>Workout name<select value={title} onChange={e=>setTitle(e.target.value)}>{['PUSH','PULL','LEGS','Full Body','Custom'].map(x=><option>{x}</option>)}</select></label><label>Workout date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="base-row"><div><b>Use a past workout as your base</b><small>Loads a previous session with the same workout name.</small></div><button type="button" onClick={loadBase} disabled={!baseWorkout}><Copy size={15}/> Load base</button></div><label>Exercise<input list="exercise-options" placeholder="Search or type an exercise" value={exerciseName} onChange={e=>setExerciseName(e.target.value)}/><datalist id="exercise-options">{library.map(x=><option value={x.name}/>)}</datalist></label><div className="sets-head"><b>Sets</b><span>Reps</span><span>Weight (kg)</span><span></span></div>{sets.map((s,i)=><div className="set-row" key={i}><b>{i+1}</b><input type="number" min="0" placeholder="Reps" value={s.reps} onChange={e=>setSets(sets.map((x,j)=>j===i?{...x,reps:e.target.value}:x))}/><input type="number" min="0" step="0.25" placeholder="kg" value={s.weight} onChange={e=>setSets(sets.map((x,j)=>j===i?{...x,weight:e.target.value}:x))}/><button type="button" className="icon-btn" onClick={()=>setSets(sets.filter((_,j)=>j!==i))}><Trash2 size={16}/></button></div>)}<button type="button" onClick={()=>setSets([...sets,{reps:'8',weight:''}])}>+ Add set</button><button className="primary save" type="submit">Save workout</button></form><p className="hint">This first version saves one exercise per workout entry. You can add more exercises by saving another entry with the same workout name and date.</p></section>}
       {tab==='library'&&<section className="card"><div className="searchbar"><Search/><input placeholder="Search exercises or muscle groups..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filters"><label><Filter size={15}/> Muscle<select value={muscle} onChange={e=>setMuscle(e.target.value)}>{['All',...new Set(library.map(x=>x.muscle))].map(x=><option>{x}</option>)}</select></label><label>Equipment<select value={equipment} onChange={e=>setEquipment(e.target.value)}>{['All',...new Set(library.map(x=>x.equipment))].map(x=><option>{x}</option>)}</select></label></div><div className="library-list">{filtered.map(x=><button className={'library-item '+(selected.name===x.name?'chosen':'')} key={x.name} onClick={()=>{setSelected(x);setTab('progress')}}><div className="exercise-icon"><Dumbbell size={18}/></div><div><b>{x.name}</b><small>{x.muscle} · {x.equipment}</small></div><span>View progress →</span></button>)}</div><p className="hint">This starter library contains common exercises, machine movements and variations. It is not a copy of HEVY's proprietary exercise catalogue.</p></section>}
