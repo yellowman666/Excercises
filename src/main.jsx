@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip,
+  LineChart, Line, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid
 } from 'recharts';
 import {
@@ -91,7 +91,6 @@ function App(){
   const [equipment,setEquipment]=useState('All');
 
   const [selected,setSelected]=useState(library[0]);
-  const [graphMetric,setGraphMetric]=useState('weight');
 
   const [date,setDate]=useState(new Date().toISOString().slice(0,10));
   const [title,setTitle]=useState('PUSH');
@@ -198,7 +197,7 @@ function App(){
     await supabase.auth.signOut();
   }
 
-  // Delete a complete workout and all its associated exercises and sets.
+  // Delete a complete workout and its associated exercises and sets.
   async function deleteWorkout(workout){
     if(!supabase||!session){
       setNotice('You must be signed in to delete workouts.');
@@ -218,7 +217,6 @@ function App(){
       const exerciseIds=(workout.workout_exercises||[])
         .map(ex=>ex.id);
 
-      // Delete the sets belonging to this workout's exercises first.
       if(exerciseIds.length){
         const {error:setsError}=await supabase
           .from('exercise_sets')
@@ -230,7 +228,6 @@ function App(){
           return;
         }
 
-        // Then delete the exercises.
         const {error:exercisesError}=await supabase
           .from('workout_exercises')
           .delete()
@@ -242,7 +239,6 @@ function App(){
         }
       }
 
-      // Finally delete the workout itself.
       const {error:workoutError}=await supabase
         .from('workouts')
         .delete()
@@ -398,6 +394,8 @@ function App(){
     (equipment==='All'||x.equipment===equipment)
   ),[query,muscle,equipment]);
 
+  // Only include sets belonging to the currently selected exercise.
+  // Both measurements are kept together for the combined progress graph.
   const historyFor=workouts
     .flatMap(workout=>
       (workout.workout_exercises||[])
@@ -405,8 +403,8 @@ function App(){
         .flatMap(exercise=>
           (exercise.exercise_sets||[]).map(set=>({
             date:workout.workout_date,
-            weight:Number(set.weight||0),
-            reps:Number(set.reps||0),
+            weight:Number(set.weight??0),
+            reps:Number(set.reps??0),
             label:new Date(workout.workout_date+'T00:00:00').toLocaleDateString()
           }))
         )
@@ -884,7 +882,7 @@ function App(){
           <div className="section-head">
             <div>
               <h3>Exercise progression</h3>
-              <p>Select an exercise to view its individual history.</p>
+              <p>Weight and reps over time for the selected exercise.</p>
             </div>
             <Dumbbell/>
           </div>
@@ -912,47 +910,128 @@ function App(){
             <Dumbbell/>
           </div>
 
-          <div className="metric-tabs">
-            <button
-              className={graphMetric==='weight'?'selected':''}
-              onClick={()=>setGraphMetric('weight')}
-            >
-              Weight (kg)
-            </button>
-            <button
-              className={graphMetric==='reps'?'selected':''}
-              onClick={()=>setGraphMetric('reps')}
-            >
-              Reps
-            </button>
+          <div style={{
+            display:'flex',
+            flexWrap:'wrap',
+            gap:'20px',
+            margin:'18px 0 8px'
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              <span style={{
+                display:'inline-block',
+                width:'24px',
+                height:'4px',
+                borderRadius:'4px',
+                background:'#e12d3c'
+              }}/>
+              <span style={{fontSize:'13px'}}>Weight (kg)</span>
+            </div>
+
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              <span style={{
+                display:'inline-block',
+                width:'24px',
+                height:'4px',
+                borderRadius:'4px',
+                background:'#45c4b0'
+              }}/>
+              <span style={{fontSize:'13px'}}>Reps</span>
+            </div>
           </div>
 
           <div className="chart">
             {historyFor.length
               ? <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={historyFor}>
-                    <defs>
-                      <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#e12d3c" stopOpacity={.35}/>
-                        <stop offset="95%" stopColor="#e12d3c" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#303238"/>
-                    <XAxis dataKey="label" stroke="#888"/>
-                    <YAxis stroke="#888"/>
-                    <Tooltip contentStyle={{
-                      background:'#202125',
-                      border:'1px solid #393b42',
-                      borderRadius:10
-                    }}/>
-                    <Area
-                      type="monotone"
-                      dataKey={graphMetric}
-                      stroke="#e12d3c"
-                      fill="url(#fill)"
-                      strokeWidth={3}
+                  <LineChart
+                    data={historyFor}
+                    margin={{top:10,right:12,left:0,bottom:5}}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#303238"
                     />
-                  </AreaChart>
+
+                    <XAxis
+                      dataKey="label"
+                      stroke="#888"
+                      tick={{fontSize:12}}
+                    />
+
+                    <YAxis
+                      yAxisId="weight"
+                      orientation="left"
+                      stroke="#e12d3c"
+                      tick={{fontSize:12}}
+                      label={{
+                        value:'kg',
+                        angle:-90,
+                        position:'insideLeft',
+                        fill:'#e12d3c'
+                      }}
+                    />
+
+                    <YAxis
+                      yAxisId="reps"
+                      orientation="right"
+                      stroke="#45c4b0"
+                      tick={{fontSize:12}}
+                      allowDecimals={false}
+                      label={{
+                        value:'reps',
+                        angle:90,
+                        position:'insideRight',
+                        fill:'#45c4b0'
+                      }}
+                    />
+
+                    <Tooltip
+                      contentStyle={{
+                        background:'#202125',
+                        border:'1px solid #393b42',
+                        borderRadius:10,
+                        color:'#fff'
+                      }}
+                      labelStyle={{color:'#fff'}}
+                      formatter={(value,name)=>[
+                        name==='Weight'?`${value} kg`:`${value} reps`,
+                        name
+                      ]}
+                    />
+
+                    <Legend
+                      verticalAlign="top"
+                      height={30}
+                      formatter={value=>(
+                        <span style={{color:'#ddd',fontSize:'13px'}}>
+                          {value}
+                        </span>
+                      )}
+                    />
+
+                    <Line
+                      yAxisId="weight"
+                      type="monotone"
+                      dataKey="weight"
+                      name="Weight"
+                      stroke="#e12d3c"
+                      strokeWidth={3}
+                      dot={{r:4,fill:'#e12d3c',strokeWidth:0}}
+                      activeDot={{r:6}}
+                      connectNulls
+                    />
+
+                    <Line
+                      yAxisId="reps"
+                      type="monotone"
+                      dataKey="reps"
+                      name="Reps"
+                      stroke="#45c4b0"
+                      strokeWidth={3}
+                      dot={{r:4,fill:'#45c4b0',strokeWidth:0}}
+                      activeDot={{r:6}}
+                      connectNulls
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               : <div className="empty">
                   No records for {selected.name} yet. Log this exercise in a workout and its progress will appear here.
