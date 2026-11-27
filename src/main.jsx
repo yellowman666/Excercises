@@ -20,6 +20,7 @@ const library = [
 
 function App(){
   const [session,setSession]=useState(null), [email,setEmail]=useState(''), [password,setPassword]=useState('');
+const [recoveryMode,setRecoveryMode]=useState(false);
   const [tab,setTab]=useState('home'), [workouts,setWorkouts]=useState([]), [query,setQuery]=useState(''), [muscle,setMuscle]=useState('All'), [equipment,setEquipment]=useState('All');
   const [selected,setSelected]=useState(library[0]), [graphMetric,setGraphMetric]=useState('weight');
   const [date,setDate]=useState(new Date().toISOString().slice(0,10)), [title,setTitle]=useState('PUSH'), [exerciseName,setExerciseName]=useState(''), [sets,setSets]=useState([{reps:'8',weight:'',},{reps:'8',weight:''},{reps:'8',weight:''}]);
