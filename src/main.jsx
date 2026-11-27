@@ -28,8 +28,21 @@ const [recoveryMode,setRecoveryMode]=useState(false);
 useEffect(()=>{ if(!supabase)return; supabase.auth.getSession().then(({data})=>setSession(data.session)); const {data:{subscription}}=supabase.auth.onAuthStateChange((event,s)=>{setSession(s);if(event==='PASSWORD_RECOVERY')setRecoveryMode(true);}); return ()=>subscription.unsubscribe(); },[]);
   useEffect(()=>{ if(session) loadWorkouts(); },[session]);
   async function loadWorkouts(){ const {data,error}=await supabase.from('workouts').select('*, workout_exercises(*, exercise_sets(*))').order('workout_date',{ascending:false}); if(error)setNotice(error.message); else setWorkouts(data||[]); }
-  async function signIn(e){e.preventDefault(); if(!supabase){setNotice('Cloud is not configured yet. Follow SETUP.md to connect Supabase.');return;} const {error}=await supabase.auth.signInWithPassword({email,password}); if(error)setNotice(error.message);}
-async function updatePassword(e){
+async function signIn(e){
+  e.preventDefault();
+  setNotice('');
+  if(!supabase){
+    setNotice('Cloud is not configured yet. Follow SETUP.md to connect Supabase.');
+    return;
+  }
+  const {error}=await supabase.auth.signInWithPassword({email,password});
+  if(error){
+    setNotice(error.message);
+  }else{
+    setNotice('Successfully signed in. Cloud connected.');
+  }
+}
+  async function updatePassword(e){
   e.preventDefault();
   const {error}=await supabase.auth.updateUser({password});
   if(error){setNotice(error.message);return;}
