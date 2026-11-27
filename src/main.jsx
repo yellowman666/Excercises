@@ -19,7 +19,7 @@ const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 
-const library = [
+const defaultLibrary = [
   ['Chest Press Machine','Chest','Machine'],
   ['Incline Chest Press Machine','Chest','Machine'],
   ['Decline Chest Press Machine','Chest','Machine'],
@@ -69,6 +69,16 @@ const library = [
   ['Plank','Abs','Bodyweight']
 ].map(([name,muscle,equipment])=>({name,muscle,equipment}));
 
+const muscleOptions = [
+  'Chest','Back','Shoulders','Biceps','Triceps','Quads',
+  'Hamstrings','Glutes','Abductors','Adductor','Calves','Abs','Other'
+];
+
+const equipmentOptions = [
+  'Machine','Cable','Dumbbell','Barbell','Kettlebell',
+  'Bodyweight','Smith Machine','Other'
+];
+
 const blankExercise = () => ({
   exerciseName: '',
   sets: [
@@ -86,17 +96,22 @@ function App(){
 
   const [tab,setTab]=useState('home');
   const [workouts,setWorkouts]=useState([]);
+  const [exerciseLibrary,setExerciseLibrary]=useState(defaultLibrary);
   const [query,setQuery]=useState('');
   const [muscle,setMuscle]=useState('All');
   const [equipment,setEquipment]=useState('All');
 
-  const [selected,setSelected]=useState(library[0]);
+  const [selected,setSelected]=useState(defaultLibrary[0]);
+  const [newExerciseName,setNewExerciseName]=useState('');
+  const [newExerciseMuscle,setNewExerciseMuscle]=useState('Other');
+  const [newExerciseEquipment,setNewExerciseEquipment]=useState('Other');
 
   const [date,setDate]=useState(new Date().toISOString().slice(0,10));
   const [title,setTitle]=useState('PUSH');
   const [exerciseItems,setExerciseItems]=useState([blankExercise()]);
   const [notice,setNotice]=useState('');
   const [deletingId,setDeletingId]=useState(null);
+  const [addingExercise,setAddingExercise]=useState(false);
 
   useEffect(()=>{
     if(!supabase)return;
@@ -116,8 +131,13 @@ function App(){
   },[]);
 
   useEffect(()=>{
-    if(session)loadWorkouts();
-    else setWorkouts([]);
+    if(session){
+      loadWorkouts();
+      loadCustomExercises();
+    }else{
+      setWorkouts([]);
+      setExerciseLibrary(defaultLibrary);
+    }
   },[session]);
 
   async function loadWorkouts(){
@@ -128,10 +148,145 @@ function App(){
       .select('*, workout_exercises(*, exercise_sets(*))')
       .order('workout_date',{ascending:false});
 
+    if(error)setNotice(error.message);
+    else setWorkouts(data||[]);
+  }
+
+  // Load this account's custom exercises and combine them with the built-in library.
+  async function loadCustomExercises(){
+    if(!supabase||!session)return;
+
+    const {data,error}=await supabase
+      .from('custom_exercises')
+      .select('id,name,muscle_group,equipment')
+      .order('name');
+
     if(error){
-      setNotice(error.message);
-    }else{
-      setWorkouts(data||[]);
+      setNotice('Could not load custom exercises: '+error.message);
+      return;
+    }
+
+    const custom=(data||[]).map(x=>({
+      id:x.id,
+      name:x.name,
+      muscle:x.muscle_group||'Other',
+      equipment:x.equipment||'Other',
+      custom:true
+    }));
+
+    setExerciseLibrary(mergeLibrary(defaultLibrary,custom));
+  }
+
+  function mergeLibrary(base,custom){
+    const result=[...base];
+
+    custom.forEach(item=>{
+      if(!result.some(x=>x.name.toLowerCase()===item.name.toLowerCase())){
+        result.push(item);
+      }
+    });
+
+    return result;
+  }
+
+  // Add a custom exercise to Supabase and immediately update the app.
+  async function addCustomExercise(name,muscleGroup='Other',equipmentType='Other'){
+    const cleanName=name.trim().replace(/\s+/g,' ');
+
+    if(!cleanName){
+      setNotice('Enter an exercise name first.');
+      return null;
+    }
+
+    const existing=exerciseLibrary.find(
+      x=>x.name.toLowerCase()===cleanName.toLowerCase()
+    );
+
+    if(existing){
+      setNotice('That exercise is already in your library.');
+      return existing;
+    }
+
+    if(!supabase||!session){
+      setNotice('Please sign in before adding a custom exercise.');
+      return null;
+    }
+
+    setAddingExercise(true);
+
+    const {data,error}=await supabase
+      .from('custom_exercises')
+      .insert({
+        user_id:session.user.id,
+        name:cleanName,
+        muscle_group:muscleGroup,
+        equipment:equipmentType
+      })
+      .select()
+      .single();
+
+    setAddingExercise(false);
+
+    if(error){
+      if(error.code==='23505'){
+        await loadCustomExercises();
+        const duplicate=exerciseLibrary.find(
+          x=>x.name.toLowerCase()===cleanName.toLowerCase()
+        );
+        setNotice('That exercise is already in your library.');
+        return duplicate||null;
+      }
+
+      setNotice('Could not add exercise: '+error.message);
+      return null;
+    }
+
+    const newExercise={
+      id:data.id,
+      name:data.name,
+      muscle:data.muscle_group,
+      equipment:data.equipment,
+      custom:true
+    };
+
+    setExerciseLibrary(current=>mergeLibrary(current,[newExercise]));
+    setNotice(`${cleanName} added to your exercise library.`);
+    return newExercise;
+  }
+
+  async function addExerciseFromLibrary(){
+    const added=await addCustomExercise(
+      newExerciseName,
+      newExerciseMuscle,
+      newExerciseEquipment
+    );
+
+    if(added){
+      setNewExerciseName('');
+      setNewExerciseMuscle('Other');
+      setNewExerciseEquipment('Other');
+    }
+  }
+
+  async function addTypedWorkoutExercise(index){
+    const name=exerciseItems[index]?.exerciseName||'';
+
+    if(!name.trim())return;
+
+    const existing=exerciseLibrary.find(
+      x=>x.name.toLowerCase()===name.trim().toLowerCase()
+    );
+
+    if(existing){
+      updateExerciseName(index,existing.name);
+      setNotice('This exercise is already in your library.');
+      return;
+    }
+
+    const added=await addCustomExercise(name);
+
+    if(added){
+      updateExerciseName(index,added.name);
     }
   }
 
@@ -144,10 +299,7 @@ function App(){
       return;
     }
 
-    const {error}=await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    const {error}=await supabase.auth.signInWithPassword({email,password});
 
     if(error)setNotice(error.message);
     else setNotice('Successfully signed in. Cloud connected.');
@@ -197,7 +349,6 @@ function App(){
     await supabase.auth.signOut();
   }
 
-  // Delete a complete workout and its associated exercises and sets.
   async function deleteWorkout(workout){
     if(!supabase||!session){
       setNotice('You must be signed in to delete workouts.');
@@ -214,8 +365,7 @@ function App(){
     setNotice('Deleting workout...');
 
     try{
-      const exerciseIds=(workout.workout_exercises||[])
-        .map(ex=>ex.id);
+      const exerciseIds=(workout.workout_exercises||[]).map(ex=>ex.id);
 
       if(exerciseIds.length){
         const {error:setsError}=await supabase
@@ -310,9 +460,7 @@ function App(){
       return;
     }
 
-    const validExercises=exerciseItems.filter(
-      item=>item.exerciseName.trim()
-    );
+    const validExercises=exerciseItems.filter(item=>item.exerciseName.trim());
 
     if(!validExercises.length){
       setNotice('Add at least one exercise before saving.');
@@ -343,13 +491,15 @@ function App(){
 
     for(let i=0;i<validExercises.length;i++){
       const item=validExercises[i];
-      const exercise=library.find(x=>x.name===item.exerciseName);
+      const exercise=exerciseLibrary.find(
+        x=>x.name.toLowerCase()===item.exerciseName.trim().toLowerCase()
+      );
 
       const {data:we,error:e2}=await supabase
         .from('workout_exercises')
         .insert({
           workout_id:w.id,
-          exercise_name:item.exerciseName,
+          exercise_name:item.exerciseName.trim(),
           muscle_group:exercise?.muscle||'Other',
           equipment:exercise?.equipment||'Other',
           sort_order:i
@@ -387,15 +537,13 @@ function App(){
     setTab('history');
   }
 
-  const filtered=useMemo(()=>library.filter(x=>
+  const filtered=useMemo(()=>exerciseLibrary.filter(x=>
     (x.name.toLowerCase().includes(query.toLowerCase())||
      x.muscle.toLowerCase().includes(query.toLowerCase()))&&
     (muscle==='All'||x.muscle===muscle)&&
     (equipment==='All'||x.equipment===equipment)
-  ),[query,muscle,equipment]);
+  ),[exerciseLibrary,query,muscle,equipment]);
 
-  // Only include sets belonging to the currently selected exercise.
-  // Both measurements are kept together for the combined progress graph.
   const historyFor=workouts
     .flatMap(workout=>
       (workout.workout_exercises||[])
@@ -416,9 +564,7 @@ function App(){
     .sort((a,b)=>{
       const dateCompare=b.workout_date.localeCompare(a.workout_date);
       if(dateCompare!==0)return dateCompare;
-
-      return (b.workout_exercises?.length||0)-
-             (a.workout_exercises?.length||0);
+      return (b.workout_exercises?.length||0)-(a.workout_exercises?.length||0);
     })[0];
 
   function loadBase(){
@@ -587,7 +733,7 @@ function App(){
           </div>
           <div className="card stat">
             <small>EXERCISES IN LIBRARY</small>
-            <strong>{library.length}</strong>
+            <strong>{exerciseLibrary.length}</strong>
             <span>Machines & variations</span>
           </div>
           <div className="card stat">
@@ -663,11 +809,15 @@ function App(){
             </div>
 
             <datalist id="exercise-options">
-              {library.map(x=><option key={x.name} value={x.name}/>)}
+              {exerciseLibrary.map(x=><option key={x.name} value={x.name}/>)}
             </datalist>
 
-            {exerciseItems.map((item,index)=>
-              <div
+            {exerciseItems.map((item,index)=>{
+              const matchingExercise=exerciseLibrary.some(
+                x=>x.name.toLowerCase()===item.exerciseName.trim().toLowerCase()
+              );
+
+              return <div
                 className="exercise-editor"
                 key={index}
                 style={{
@@ -698,8 +848,27 @@ function App(){
                     placeholder="Search or type an exercise"
                     value={item.exerciseName}
                     onChange={e=>updateExerciseName(index,e.target.value)}
+                    onKeyDown={e=>{
+                      if(e.key==='Enter'&&!matchingExercise){
+                        e.preventDefault();
+                        addTypedWorkoutExercise(index);
+                      }
+                    }}
                   />
                 </label>
+
+                {item.exerciseName.trim()&&!matchingExercise&&
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{marginTop:'10px'}}
+                    disabled={addingExercise}
+                    onClick={()=>addTypedWorkoutExercise(index)}
+                  >
+                    <Plus size={16}/>
+                    {addingExercise?'Adding...':'Add "'+item.exerciseName.trim()+'" to library'}
+                  </button>
+                }
 
                 <div className="sets-head">
                   <b>Sets</b>
@@ -740,8 +909,8 @@ function App(){
                 <button type="button" onClick={()=>addSet(index)}>
                   + Add set
                 </button>
-              </div>
-            )}
+              </div>;
+            })}
 
             <button
               type="button"
@@ -759,12 +928,73 @@ function App(){
           <p className="hint">
             All exercises and sets are saved together as one workout session.
             Loading a past workout copies it into a new session and does not overwrite the original.
+            New exercises can be added directly from the exercise name field.
           </p>
         </section>
       }
 
       {tab==='library'&&
         <section className="card">
+          <div className="section-head">
+            <div>
+              <h3>Add a new exercise</h3>
+              <p>Create your own exercise and save it to your cloud library.</p>
+            </div>
+            <Plus/>
+          </div>
+
+          <div className="custom-exercise-form">
+            <label>
+              Exercise name
+              <input
+                placeholder="e.g. Cable Lateral Raise"
+                value={newExerciseName}
+                onChange={e=>setNewExerciseName(e.target.value)}
+              />
+            </label>
+
+            <div className="form-grid">
+              <label>
+                Muscle group
+                <select
+                  value={newExerciseMuscle}
+                  onChange={e=>setNewExerciseMuscle(e.target.value)}
+                >
+                  {muscleOptions.map(x=><option key={x}>{x}</option>)}
+                </select>
+              </label>
+
+              <label>
+                Equipment
+                <select
+                  value={newExerciseEquipment}
+                  onChange={e=>setNewExerciseEquipment(e.target.value)}
+                >
+                  {equipmentOptions.map(x=><option key={x}>{x}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              className="primary"
+              onClick={addExerciseFromLibrary}
+              disabled={addingExercise||!newExerciseName.trim()}
+            >
+              <Plus size={16}/>
+              {addingExercise?'Adding exercise...':'Add exercise to library'}
+            </button>
+          </div>
+
+          <div className="divider" style={{margin:'24px 0'}}/>
+
+          <div className="section-head">
+            <div>
+              <h3>Exercise library</h3>
+              <p>{exerciseLibrary.length} exercises available</p>
+            </div>
+          </div>
+
           <div className="searchbar">
             <Search/>
             <input
@@ -778,7 +1008,7 @@ function App(){
             <label>
               <Filter size={15}/> Muscle
               <select value={muscle} onChange={e=>setMuscle(e.target.value)}>
-                {['All',...new Set(library.map(x=>x.muscle))].map(x=>
+                {['All',...new Set(exerciseLibrary.map(x=>x.muscle))].map(x=>
                   <option key={x}>{x}</option>
                 )}
               </select>
@@ -787,7 +1017,7 @@ function App(){
             <label>
               Equipment
               <select value={equipment} onChange={e=>setEquipment(e.target.value)}>
-                {['All',...new Set(library.map(x=>x.equipment))].map(x=>
+                {['All',...new Set(exerciseLibrary.map(x=>x.equipment))].map(x=>
                   <option key={x}>{x}</option>
                 )}
               </select>
@@ -805,14 +1035,21 @@ function App(){
                 }}
               >
                 <div className="exercise-icon"><Dumbbell size={18}/></div>
-                <div><b>{x.name}</b><small>{x.muscle} · {x.equipment}</small></div>
+                <div>
+                  <b>{x.name}</b>
+                  <small>{x.muscle} · {x.equipment}{x.custom?' · Custom':''}</small>
+                </div>
                 <span>View progress →</span>
               </button>
             )}
+
+            {!filtered.length&&
+              <div className="empty">No exercises match your search.</div>
+            }
           </div>
 
           <p className="hint">
-            This starter library contains common exercises, machine movements and variations.
+            Custom exercises are saved to your cloud account and will be available the next time you sign in.
           </p>
         </section>
       }
@@ -840,10 +1077,7 @@ function App(){
                     onClick={()=>deleteWorkout(w)}
                     style={{color:'#e12d3c'}}
                   >
-                    {deletingId===w.id
-                      ? '...'
-                      : <Trash2 size={18}/>
-                    }
+                    {deletingId===w.id?'...':<Trash2 size={18}/>}
                   </button>
                 </div>
               </div>
@@ -892,11 +1126,11 @@ function App(){
             <select
               value={selected.name}
               onChange={e=>{
-                const exercise=library.find(x=>x.name===e.target.value);
+                const exercise=exerciseLibrary.find(x=>x.name===e.target.value);
                 if(exercise)setSelected(exercise);
               }}
             >
-              {library.map(x=>
+              {exerciseLibrary.map(x=>
                 <option key={x.name} value={x.name}>{x.name}</option>
               )}
             </select>
@@ -946,44 +1180,23 @@ function App(){
                     data={historyFor}
                     margin={{top:10,right:12,left:0,bottom:5}}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#303238"
-                    />
-
-                    <XAxis
-                      dataKey="label"
-                      stroke="#888"
-                      tick={{fontSize:12}}
-                    />
-
+                    <CartesianGrid strokeDasharray="3 3" stroke="#303238"/>
+                    <XAxis dataKey="label" stroke="#888" tick={{fontSize:12}}/>
                     <YAxis
                       yAxisId="weight"
                       orientation="left"
                       stroke="#e12d3c"
                       tick={{fontSize:12}}
-                      label={{
-                        value:'kg',
-                        angle:-90,
-                        position:'insideLeft',
-                        fill:'#e12d3c'
-                      }}
+                      label={{value:'kg',angle:-90,position:'insideLeft',fill:'#e12d3c'}}
                     />
-
                     <YAxis
                       yAxisId="reps"
                       orientation="right"
                       stroke="#45c4b0"
                       tick={{fontSize:12}}
                       allowDecimals={false}
-                      label={{
-                        value:'reps',
-                        angle:90,
-                        position:'insideRight',
-                        fill:'#45c4b0'
-                      }}
+                      label={{value:'reps',angle:90,position:'insideRight',fill:'#45c4b0'}}
                     />
-
                     <Tooltip
                       contentStyle={{
                         background:'#202125',
@@ -997,17 +1210,13 @@ function App(){
                         name
                       ]}
                     />
-
                     <Legend
                       verticalAlign="top"
                       height={30}
                       formatter={value=>(
-                        <span style={{color:'#ddd',fontSize:'13px'}}>
-                          {value}
-                        </span>
+                        <span style={{color:'#ddd',fontSize:'13px'}}>{value}</span>
                       )}
                     />
-
                     <Line
                       yAxisId="weight"
                       type="monotone"
@@ -1019,7 +1228,6 @@ function App(){
                       activeDot={{r:6}}
                       connectNulls
                     />
-
                     <Line
                       yAxisId="reps"
                       type="monotone"
