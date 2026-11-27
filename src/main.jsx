@@ -88,7 +88,7 @@ async function signIn(e){
       <nav>{[['home','Overview',Activity],['workout','Start workout',Dumbbell],['library','Exercise library',Search],['history','Workout history',History],['progress','Progress',ChartNoAxesCombined]].map(([id,label,Icon])=><button className={tab===id?'active':''} onClick={()=>setTab(id)} key={id}><Icon size={18}/>{label}</button>)}</nav>
       <div className="side-bottom">{session?<><small>{session.user.email}</small><button onClick={()=>supabase.auth.signOut()}><LogOut size={17}/> Sign out</button></>:<small>Cloud account not connected</small>}</div>
     </aside>
-    <main><header><div><span className="eyebrow">YOUR TRAINING SPACE</span><h1>{({home:'Overview',workout:'Start workout',library:'Exercise library',history:'Workout history',progress:'Exercise progression'})[tab]}</h1></div><div className="header-right"><span className="cloud"><span/> {session?'Cloud connected':'Cloud setup required'}</span></div></header>
+    <main><header><div><span className="eyebrow">YOUR TRAINING SPACE</span><h1>{({home:'Overview',workout:'Start workout',library:'Exercise library',history:'Workout history',progress:'Exercise progression'})[tab]}</h1></div><div className="header-right">   <span className="cloud"><span/> {session?'Cloud connected':'Cloud setup required'}</span>   {session&&<button type="button" onClick={()=>supabase.auth.signOut()}><LogOut size={16}/> Sign out</button>} </div></header>
       {notice&&<div className="notice" onClick={()=>setNotice('')}>{notice} <b>×</b></div>}
       {recoveryMode ? (
   <section className="auth card">
